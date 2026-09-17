@@ -73,8 +73,12 @@ claude plugin marketplace remove tychynavova-skills
   soft decline), external MPI (CAVV, ECI, DS transaction id…);
 - колекція `<provider>` у Postman (створюється, якщо немає) з новою папкою `vN`; для кожного методу оплати —
   всі підтримувані комбінації `{3DS | non-3DS | external MPI} × {SMS | DMS}` окремими готовими запитами;
+- для Apple Pay / Google Pay — окремо `Provider token` і `Decrypted data` (розшифровані мерчантом дані:
+  DPAN / network token + cryptogram + ECI, Google Pay `CRYPTOGRAM_3DS` і `PAN_ONLY`); якщо така можливість
+  є лише в закритій документації провайдера — запити позначаються `[Private]` із джерелом;
 - environment `<PROVIDER>_V<N>_SANDBOX` — лише base URL, ключі (порожні, заповнюєш сам)
-  і змінні, які запити зберігають з відповідей.
+  і змінні, які запити зберігають з відповідей;
+- у звіті — статистика роботи Claude (час, модель, виклики, токени, інструменти) зі `session_stats.py`.
 
 Не комітьте `.env` та ключі.
 
