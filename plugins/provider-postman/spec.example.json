@@ -341,6 +341,287 @@
       ]
     },
     {
+      "name": "2. Card — Recurring",
+      "description": "Provider token — MIT на токені провайдера; Scheme ID (MIT) — мерчант зберігає картку та scheme id сам.",
+      "docs": "https://docs.example-provider.com/api/payments/stored-credentials",
+      "folders": [
+        {
+          "name": "Scheme ID (MIT)",
+          "description": "Статус: публічно. Scheme id повертається в `network_transaction_id` відповіді на CIT. Картка — PAN з vault мерчанта (потребує дозволу на raw card data). Типи MIT: recurring, unscheduled.",
+          "requests": [
+            {
+              "name": "1. Initial CIT (stored credential first, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "description": "Перший платіж клієнта з прапорцем `stored_credential.usage=first`; scheme id зберігається в `scheme_id`.",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Idempotency-Key",
+                  "{{order_id}}"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": true,
+                  "card": {
+                    "number": "4242424242424242",
+                    "exp_month": 12,
+                    "exp_year": 2030,
+                    "cvc": "123"
+                  },
+                  "three_ds": {
+                    "mode": "required",
+                    "return_url": "https://example.com/3ds/return"
+                  },
+                  "stored_credential": {
+                    "initiator": "customer",
+                    "type": "recurring",
+                    "usage": "first"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
+              ],
+              "saves": {
+                "payment_id": "r.id",
+                "scheme_id": "r.network_transaction_id || ''"
+              }
+            },
+            {
+              "name": "2. MIT by scheme_id (recurring, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/stored-credentials",
+              "description": "MIT без CVV і 3DS, scheme id з кроку 1. SMS: capture=true.",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Idempotency-Key",
+                  "{{order_id}}"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": true,
+                  "card": {
+                    "number": "4242424242424242",
+                    "exp_month": 12,
+                    "exp_year": 2030
+                  },
+                  "stored_credential": {
+                    "initiator": "merchant",
+                    "type": "recurring",
+                    "usage": "subsequent",
+                    "previous_network_transaction_id": "{{scheme_id}}"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
+              ],
+              "saves": {
+                "payment_id": "r.id"
+              }
+            },
+            {
+              "name": "2. MIT by scheme_id (recurring, DMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/stored-credentials",
+              "description": "Те саме, DMS: capture=false, далі Capture / Void.",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Idempotency-Key",
+                  "{{order_id}}"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": false,
+                  "card": {
+                    "number": "4242424242424242",
+                    "exp_month": 12,
+                    "exp_year": 2030
+                  },
+                  "stored_credential": {
+                    "initiator": "merchant",
+                    "type": "recurring",
+                    "usage": "subsequent",
+                    "previous_network_transaction_id": "{{scheme_id}}"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
+              ],
+              "saves": {
+                "payment_id": "r.id"
+              }
+            },
+            {
+              "name": "2. MIT by scheme_id (unscheduled, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/stored-credentials",
+              "description": "Незаплановане списання (unscheduled credential-on-file).",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Idempotency-Key",
+                  "{{order_id}}"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": true,
+                  "card": {
+                    "number": "4242424242424242",
+                    "exp_month": 12,
+                    "exp_year": 2030
+                  },
+                  "stored_credential": {
+                    "initiator": "merchant",
+                    "type": "unscheduled",
+                    "usage": "subsequent",
+                    "previous_network_transaction_id": "{{scheme_id}}"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
+              ],
+              "saves": {
+                "payment_id": "r.id"
+              }
+            },
+            {
+              "name": "2. MIT by scheme_id (unscheduled, DMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/stored-credentials",
+              "description": "Незаплановане списання, DMS.",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Idempotency-Key",
+                  "{{order_id}}"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": false,
+                  "card": {
+                    "number": "4242424242424242",
+                    "exp_month": 12,
+                    "exp_year": 2030
+                  },
+                  "stored_credential": {
+                    "initiator": "merchant",
+                    "type": "unscheduled",
+                    "usage": "subsequent",
+                    "previous_network_transaction_id": "{{scheme_id}}"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
+              ],
+              "saves": {
+                "payment_id": "r.id"
+              }
+            },
+            {
+              "name": "3. MIT by external scheme_id (recurring, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/stored-credentials",
+              "description": "Scheme id першого платежу, проведеного через іншого провайдера (міграція). Значення — приклад формату Visa TID (15 цифр).",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ],
+                [
+                  "Idempotency-Key",
+                  "{{order_id}}"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": true,
+                  "card": {
+                    "number": "4242424242424242",
+                    "exp_month": 12,
+                    "exp_year": 2030
+                  },
+                  "stored_credential": {
+                    "initiator": "merchant",
+                    "type": "recurring",
+                    "usage": "subsequent",
+                    "previous_network_transaction_id": "123456789012345"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
+              ],
+              "saves": {
+                "payment_id": "r.id"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "4. Capture / Void / Refund",
       "docs": "https://docs.example-provider.com/api/payments",
       "requests": [
@@ -519,6 +800,9 @@
       },
       {
         "key": "order_id"
+      },
+      {
+        "key": "scheme_id"
       },
       {
         "key": "payment_id"

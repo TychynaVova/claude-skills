@@ -3,7 +3,7 @@ name: provider-postman
 description: >-
   Розбір API платіжного провайдера за документацією (лінк та/або файл будь-якого формату) і генерація
   Postman-прикладів: локальний опис методів + нова версійна папка (v1/v2/v3…) у колекції провайдера +
-  environment. Покриває стандартну оплату в усіх комбінаціях SMS/DMS × 3DS провайдера / без 3DS / власний MPI (external 3DS), рекурентні платежі, статус/деталі транзакції, capture, refund,
+  environment. Покриває стандартну оплату в усіх комбінаціях SMS/DMS × 3DS провайдера / без 3DS / власний MPI (external 3DS), рекурентні платежі (токен провайдера і MIT за scheme_id / network transaction id), статус/деталі транзакції, capture, refund,
   void, Apple Pay / Google Pay (токен провайдера і розшифровані дані). Використовуй, коли користувач дає
   лінк на документацію провайдера і просить «зробити запити в Postman», «описати методи провайдера»,
   «оновити/створити v2 (v3…) у Postman», а також на /provider-postman <лінк або файл>.
@@ -47,7 +47,8 @@ Postman collection, DOCX, HTML, MD…). Якщо нічого не переда�
    | Режими SMS / DMS | див. «SMS / DMS» нижче — обов'язково для кожного методу оплати |
    | 3DS / без 3DS / external MPI | див. «3DS» нижче — обов'язково для кожного методу оплати |
    | Стандартна оплата | create payment / authorize / sale / charge, 3DS (redirect, challenge, callback), confirm |
-   | Рекурентні | збереження картки/токена (tokenize, customer, payment method, mandate), MIT / off-session, network transaction id (scheme id), stored credentials |
+   | Рекурентні | збереження картки/токена (tokenize, customer, payment method, mandate), MIT / off-session на токені провайдера |
+   | MIT за scheme_id | див. «MIT за scheme_id» нижче — обов'язкова перевірка |
    | Статус / деталі | get payment / transaction / order, пошук за order id |
    | Capture (DMS) | повний і частковий, множинні capture, capture більшої суми (якщо дозволено) |
    | Void / Cancel (DMS) | скасування авторизації до capture, причини; чи можна void після capture (зазвичай ні) |
@@ -91,6 +92,25 @@ Postman collection, DOCX, HTML, MD…). Якщо нічого не переда�
    Для recurring: MIT зазвичай без 3DS; перший CIT для збереження картки — з 3DS; перевір, чи провайдер
    приймає 3DS / external MPI дані на рекурентних.
    Не підтримується режим — запиши «не підтримується / не знайдено» із джерелом.
+
+   **MIT за scheme_id (обов'язкова перевірка).** Мерчант сам зберігає картку (PAN у власному vault,
+   network token, DPAN/MPAN гаманця) і ID транзакції платіжної системи з першого CIT (scheme id /
+   network transaction id: Visa Transaction ID, Mastercard Trace ID / Financial Network Code…) і проводить
+   наступні MIT через провайдера — у т.ч. якщо перший платіж ішов через іншого провайдера. З'ясуй:
+   - **звідки брати scheme id**: поле у відповіді на initial / у статусі / у вебхуку
+     (`network_transaction_id`, `scheme_transaction_id`, `scheme_reference`, `trace_id`,
+     `transaction_identifier`…), для якого флоу воно повертається (CIT з 3DS, без 3DS, гаманці);
+   - **як передати в MIT**: поле з попереднім scheme id (`previous_network_transaction_id`,
+     `mit_exemption[network_transaction_id]`, `original_transaction_id`, `scheme_reference`…) і
+     stored-credential індикатори: ініціатор (`merchant`), тип MIT (`recurring` / `unscheduled` /
+     `installment`, `stored_credential_transaction_type`), використання (`first` / `subsequent`),
+     `off_session` / `recurring_indicator`; чи потрібен прапорець на першому CIT (`first` / `setup`);
+   - **джерело картки в MIT**: PAN (зазвичай потребує PCI / дозволу на raw card data), network token
+     (+ cryptogram чи без), DPAN/MPAN Apple Pay, Google Pay; чи потрібен CVV/3DS (зазвичай ні);
+   - SMS / DMS для MIT, обмеження мереж, коди відмов (напр. «transaction not permitted»);
+   - статус: **публічно** / **закрита функція** (джерело) / **не підтримується** / **не знайдено** — ті
+     самі джерела й порядок пошуку, що для розшифрованих даних гаманців (включно зі старими папками
+     колекції та питанням до користувача).
 
    **Гаманці: розшифровані дані (обов'язкова перевірка).** Мерчант сам розшифровує токен Apple Pay /
    Google Pay і передає провайдеру дані картки-токена. Шукай наполегливо — такі можливості часто
@@ -164,6 +184,16 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
 - **Статуси / помилки:** ключові значення.
 - **Примітки:** 3DS, обмеження, відмінності sandbox.
 
+## MIT за scheme_id
+| | Статус | Джерело | Поле scheme id у відповіді CIT | Поля в MIT | SMS / DMS |
+|---|---|---|---|---|---|
+| Card (PAN) | … | … | … | … | … |
+| Network token | … | … | … | … | … |
+| Apple Pay DPAN / MPAN | … | … | … | … | … |
+| Google Pay | … | … | … | … | … |
+
+Stored-credential індикатори (first / subsequent, recurring / unscheduled / installment): …
+
 ## Гаманці: розшифровані дані
 | | Статус (публічно / закрита функція / не підтримується / не знайдено) | Джерело | Поля | SMS / DMS | Recurring |
 |---|---|---|---|---|---|
@@ -193,7 +223,7 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
    `build` рахує це сам (`"version": null`). Наявні папки не чіпай.
 4. Структура всередині `vN` (порожні категорії пропускай, нумерація підпапок наскрізна):
    1. `Card — Initial`
-   2. `Card — Recurring` (токен провайдера; network transaction id — якщо підтримується)
+   2. `Card — Recurring` — підпапки `Provider token` і `Scheme ID (MIT)`
    3. `Status / Details`
    4. `Capture / Void / Refund`
    5. `Apple Pay` (`Provider token` та `Decrypted data` — окремими запитами/флоу)
@@ -212,6 +242,17 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
      отримання статусу. Browser info — у тілі запиту літералами (реалістичні значення).
    - Опис кожного варіанта: чим відрізняється (параметр/ендпоінт), очікуваний статус, яку тестову
      картку взято і який сценарій вона дає (frictionless / challenge / decline).
+   - **`Scheme ID (MIT)` створюється завжди** (у `Card — Recurring`, а для гаманців — у
+     `Apple Pay` / `Google Pay` → `Recurring — Scheme ID`):
+     - флоу: `1. Initial CIT (…)` зі stored-credential прапорцем `first`, що зберігає scheme id у
+       змінну оточення (`saves`, напр. `scheme_id`), і `2. MIT by scheme_id (…)`, що його використовує;
+       якщо провайдер повертає scheme id лише в статусі чи вебхуку — між ними `Get Payment`;
+     - варіанти: кожне підтримуване джерело картки (PAN / network token / DPAN) × кожен тип MIT
+       (`recurring`, `unscheduled`, `installment` — ті, що підтримує провайдер) × {SMS, DMS};
+       окремий запит «MIT за зовнішнім scheme_id» (scheme id від іншого провайдера — літерал-приклад);
+     - статус «закрита функція» → суфікс `[Private]`, в описі джерело параметрів і що функцію
+       треба ввімкнути (PCI / raw card data тощо); «не знайдено» → як для гаманців (питання
+       користувачу, інакше папка з описом без запитів).
    - **Гаманці — `Decrypted data` створюється завжди** для Apple Pay і Google Pay:
      - статус «публічно» → усі комбінації: Apple Pay decrypted × {SMS, DMS}; Google Pay
        `CRYPTOGRAM_3DS` × {SMS, DMS} і `PAN_ONLY` × {3DS провайдера, Non-3DS, External MPI (якщо можна)} ×
@@ -276,6 +317,6 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
 
 
 Коротко: джерела, скільки методів знайдено по категоріях, матриця підтримки (SMS/DMS × 3DS / без 3DS /
-external MPI по кожному методу оплати; окремо — статус розшифрованих даних Apple Pay / Google Pay
-з джерелами) і скільки варіантів запитів створено, чого немає в документації, шлях до
+external MPI по кожному методу оплати; окремо — статус MIT за scheme_id і розшифрованих даних
+Apple Pay / Google Pay з джерелами) і скільки варіантів запитів створено, чого немає в документації, шлях до
 `methods.md`, назва колекції/папки/оточення, що треба заповнити (ключі), що не перевірено запуском.

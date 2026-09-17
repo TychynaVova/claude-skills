@@ -4,7 +4,7 @@
 
 | Плагін | Що робить |
 |---|---|
-| [provider-postman](plugins/provider-postman/SKILL.md) | За документацією платіжного провайдера (лінк або файл) збирає методи — оплата в режимах SMS/DMS з 3DS, без 3DS і з власним MPI, recurring, статус, capture/void/refund, Apple/Google Pay — пише їх опис і генерує версійну папку запитів (v1, v2, …) та environment у Postman |
+| [provider-postman](plugins/provider-postman/SKILL.md) | За документацією платіжного провайдера (лінк або файл) збирає методи — оплата в режимах SMS/DMS з 3DS, без 3DS і з власним MPI, recurring (у т.ч. MIT за scheme_id), статус, capture/void/refund, Apple/Google Pay — пише їх опис і генерує версійну папку запитів (v1, v2, …) та environment у Postman |
 
 ## Встановлення
 
@@ -73,6 +73,9 @@ claude plugin marketplace remove tychynavova-skills
   soft decline), external MPI (CAVV, ECI, DS transaction id…);
 - колекція `<provider>` у Postman (створюється, якщо немає) з новою папкою `vN`; для кожного методу оплати —
   всі підтримувані комбінації `{3DS | non-3DS | external MPI} × {SMS | DMS}` окремими готовими запитами;
+- recurring — окремо на токені провайдера і `Scheme ID (MIT)`: перший CIT зберігає scheme id
+  (network transaction id), далі MIT за ним (recurring / unscheduled / installment × SMS / DMS,
+  PAN / network token / DPAN, а також MIT за scheme id від іншого провайдера);
 - для Apple Pay / Google Pay — окремо `Provider token` і `Decrypted data` (розшифровані мерчантом дані:
   DPAN / network token + cryptogram + ECI, Google Pay `CRYPTOGRAM_3DS` і `PAN_ONLY`); якщо така можливість
   є лише в закритій документації провайдера — запити позначаються `[Private]` із джерелом;
