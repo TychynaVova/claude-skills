@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""Postman API helper для skill provider-postman.
+
+Команди:
+  workspaces                              список робочих просторів (id, тип, назва)
+  find <provider>                         колекції/папки/оточення з назвою провайдера
+  tree <collection_uid>                   дерево колекції (папки, запити)
+  build <spec.json> [--dry]               створити колекцію (якщо треба), папку версії, підпапки, запити, оточення
+  update <spec.json>                      оновити на місці запити вже створеної папки версії (пошук за назвами)
+  verify <spec.json>                      звірити змінні з запитів і змінні оточення
+
+Ключ: змінна середовища POSTMAN_API_KEY (або файл .env у поточній директорії).
+
+Особливості Postman API (перевірено):
+  * PUT/DELETE папок і запитів — id з префіксом власника КОЛЕКЦІЇ: <owner>-<id>;
+  * PUT запиту — шлях колекції БЕЗ префікса власника, інакше changeParentError;
+  * вкладена папка — поле "folder" (id без префікса) у тілі POST /folders;
+  * запит у папку — POST /collections/<uid>/requests?folder=<owner>-<folderId>;
+  * відсутній auth у запиту = успадкування від папки.
+"""
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+API = 'https://api.getpostman.com'
+
+
+def load_key():
+    key = os.environ.get('POSTMAN_API_KEY')
+    if not key and os.path.exists('.env'):
+        for line in open('.env', encoding='utf-8'):
+            if line.startswith('POSTMAN_API_KEY='):
+                key = line.split('=', 1)[1].strip().strip('"')
+    if not key:
+        sys.exit('POSTMAN_API_KEY не знайдено (env або ./.env)')
+    return key
+
+
+KEY = None
+DRY = '--dry' in sys.argv
+
+
+def call(method, path, body=None):
+    if DRY and method != 'GET':
+        print('  DRY', method, path, (body or {}).get('name', ''))
+        return {'model_id': 'dry', 'collection': {'uid': 'dry-dry'}, 'environment': {'uid': 'dry'}}
+    req = urllib.request.Request(
+        API + path, method=method,
+        data=json.dumps(body, ensure_ascii=False).encode() if body is not None else None,
+        headers={'X-Api-Key': KEY, 'Content-Type': 'application/json'},
+    )
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        sys.exit(f'HTTP {e.code} {method} {path}: {e.read().decode()[:500]}')
+
+
+def owner_of(uid):
+    return uid.split('-', 1)[0]
+
+
+def bare(uid):
+    return uid.split('-', 1)[1]
+
+
+# ---------- spec → Postman request ----------
+
+def script(listen, lines):
+    return {'listen': listen, 'script': {'type': 'text/javascript', 'exec': lines}}
+
+
+def save_script(saves):
+    """saves: {"env_var": "js expression over r"}"""
+    lines = ['if (pm.response.code >= 200 && pm.response.code < 300) {', '    const r = pm.response.json();']
+    lines += [f"    pm.environment.set('{k}', {v});" for k, v in saves.items()]
+    return script('test', lines + ['}'])
+
+
+def to_request(spec_req, docs_default):
+    docs = spec_req.get('docs') or docs_default
+    desc = spec_req.get('description', '').rstrip()
+    if docs:
+        desc += f'\n\n📖 Документація: {docs}'
+    body = {
+        'name': spec_req['name'],
+        'method': spec_req['method'],
+        'url': spec_req['url'],
+        'description': desc.strip(),
+        'headerData': [{'key': h[0], 'value': h[1], 'description': h[2] if len(h) > 2 else ''}
+                       for h in spec_req.get('headers', [])],
+        'events': [],
+    }
+    if spec_req.get('auth'):
+        body['auth'] = spec_req['auth']
+    b = spec_req.get('body') or {'mode': 'none'}
+    if b['mode'] in ('urlencoded', 'formdata'):
+        body['dataMode'] = 'params' if b['mode'] == 'formdata' else 'urlencoded'
+        body['data'] = [{'key': p[0], 'value': p[1], 'description': p[2] if len(p) > 2 else '',
+                         'type': 'text', 'enabled': not (len(p) > 3 and p[3] is False)}
+                        for p in b['params']]
+    elif b['mode'] == 'raw':
+        raw = b['raw'] if isinstance(b['raw'], str) else json.dumps(b['raw'], ensure_ascii=False, indent=2)
+        body['dataMode'] = 'raw'
+        body['rawModeData'] = raw
+        body['dataOptions'] = {'raw': {'language': b.get('language', 'json')}}
+    else:
+        body['dataMode'] = None
+        body['data'] = []
+    if spec_req.get('prerequest'):
+        body['events'].append(script('prerequest', spec_req['prerequest']))
+    if spec_req.get('saves'):
+        body['events'].append(save_script(spec_req['saves']))
+    return body
+
+
+# ---------- commands ----------
+
+def cmd_workspaces():
+    for w in call('GET', '/workspaces')['workspaces']:
+        print(w['id'], w['type'], w['name'])
+
+
+def cmd_find(name):
+    n = name.lower()
+    for c in call('GET', '/collections')['collections']:
+        if n in c['name'].lower():
+            print('COLLECTION', c['uid'], c['name'])
+            col = call('GET', f"/collections/{c['uid']}")['collection']
+            print('   top-level folders:', [i['name'] for i in col['item'] if 'item' in i])
+    for e in call('GET', '/environments')['environments']:
+        if n in e['name'].lower():
+            print('ENV', e['uid'], e['name'])
+
+
+def cmd_tree(uid):
+    col = call('GET', f'/collections/{uid}')['collection']
+
+    def walk(items, ind):
+        for it in items:
+            if 'item' in it:
+                print('  ' * ind + '📁', it['name'], f"(id {it['id']})")
+                walk(it['item'], ind + 1)
+            else:
+                r = it['request']
+                print('  ' * ind + '-', r['method'], it['name'], '|', r['url']['raw'] if isinstance(r['url'], dict) else r['url'])
+    walk(col['item'], 0)
+
+
+def next_version(col):
+    versions = [int(m.group(1)) for i in col['item'] if 'item' in i
+                for m in [re.fullmatch(r'v(\d+)', i['name'].strip(), re.I)] if m]
+    has_unversioned = any('item' in i for i in col['item'])
+    if versions:
+        return max(versions) + 1
+    return 2 if has_unversioned else 1
+
+
+def cmd_build(path):
+    spec = json.load(open(path, encoding='utf-8'))
+    ws = spec['workspace_id']
+    docs = spec.get('docs_url', '')
+    uid = spec.get('collection_uid')
+    if not uid:
+        res = call('POST', f'/collections?workspace={ws}', {'collection': {
+            'info': {'name': spec['provider'], 'description': f'📖 Документація: {docs}',
+                     'schema': 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'},
+            'item': []}})
+        uid = res['collection']['uid']
+        print('created collection', uid)
+        version = 1
+    else:
+        version = next_version(call('GET', f'/collections/{uid}')['collection'])
+    version = spec.get('version') or version
+    owner = owner_of(uid)
+    vname = f'v{version}'
+    res = call('POST', f'/collections/{uid}/folders', {
+        'name': vname,
+        'description': spec.get('description', '') + (f'\n\n📖 Документація: {docs}' if docs else ''),
+    })
+    vid = res['model_id']
+    print('version folder', vname, vid)
+    if spec.get('auth') or spec.get('folder_test'):
+        upd = {}
+        if spec.get('auth'):
+            upd['auth'] = spec['auth']
+        if spec.get('folder_test'):
+            upd['events'] = [script('test', spec['folder_test'])]
+        call('PUT', f'/collections/{uid}/folders/{owner}-{vid}', upd)
+    for folder in spec['folders']:
+        fdesc = folder.get('description', '') + (f"\n\n📖 Документація: {folder['docs']}" if folder.get('docs') else '')
+        fres = call('POST', f'/collections/{uid}/folders', {'name': folder['name'], 'description': fdesc, 'folder': vid})
+        fid = fres['model_id']
+        print(' folder', folder['name'])
+        for r in folder['requests']:
+            call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, folder.get('docs') or docs))
+            print('   +', r['name'])
+    env = spec.get('environment')
+    if env:
+        values = [{'key': v['key'], 'value': v.get('value', ''), 'type': v.get('type', 'default'), 'enabled': True}
+                  for v in env['values']]
+        eres = call('POST', f'/environments?workspace={ws}', {'environment': {'name': env['name'], 'values': values}})
+        print('environment', env['name'], eres['environment']['uid'])
+    print(f'\nDONE: collection {uid}, folder {vname} (id {vid}). Запиши ці id у spec (collection_uid, version).')
+
+
+def find_version_folder(uid, version):
+    col = call('GET', f'/collections/{uid}')['collection']
+    return next(i for i in col['item'] if i['name'] == f'v{version}')
+
+
+def cmd_update(path):
+    spec = json.load(open(path, encoding='utf-8'))
+    uid, docs = spec['collection_uid'], spec.get('docs_url', '')
+    vf = find_version_folder(uid, spec['version'])
+    existing = {(f['name'], r['name']): r['id'] for f in vf['item'] for r in f['item']}
+    for folder in spec['folders']:
+        for r in folder['requests']:
+            rid = existing.get((folder['name'], r['name']))
+            if not rid:
+                print('SKIP (нема в Postman, створи через build або вручну):', folder['name'], '/', r['name'])
+                continue
+            call('PUT', f'/collections/{bare(uid)}/requests/{owner_of(uid)}-{rid}', to_request(r, folder.get('docs') or docs))
+            print('updated', folder['name'], '/', r['name'])
+
+
+def cmd_verify(path):
+    spec = json.load(open(path, encoding='utf-8'))
+    vf = find_version_folder(spec['collection_uid'], spec['version'])
+    used, local = set(), set()
+    for f in vf['item']:
+        for r in f['item']:
+            txt = json.dumps(r, ensure_ascii=False)
+            used |= set(re.findall(r'\{\{([\w.-]+)\}\}', json.dumps(r['request'], ensure_ascii=False)))
+            local |= set(re.findall(r"pm\.variables\.set\('([\w.-]+)'", txt))
+    used |= set(re.findall(r'\{\{([\w.-]+)\}\}', json.dumps(vf.get('auth') or {})))
+    env_keys = {v['key'] for v in spec['environment']['values']}
+    print('tree:')
+    for f in vf['item']:
+        print('  📁', f['name'], len(f['item']), 'requests')
+    print('used but not in env/local:', sorted(used - env_keys - local))
+    print('in env but unused in requests:', sorted(env_keys - used))
+
+
+def main():
+    global KEY
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    if not args:
+        sys.exit(__doc__)
+    KEY = load_key()
+    cmd, rest = args[0], args[1:]
+    {'workspaces': cmd_workspaces, 'find': cmd_find, 'tree': cmd_tree, 'build': cmd_build, 'update': cmd_update, 'verify': cmd_verify}[cmd](*rest)
+
+
+if __name__ == '__main__':
+    main()

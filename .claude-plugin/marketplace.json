@@ -1,0 +1,17 @@
+{
+  "name": "tychynavova-skills",
+  "owner": {
+    "name": "Volodymyr Tychyna",
+    "url": "https://github.com/TychynaVova"
+  },
+  "metadata": {
+    "description": "Skill-и для Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "provider-postman",
+      "source": "./plugins/provider-postman",
+      "description": "Документація платіжного провайдера → опис методів → запити та environment у Postman."
+    }
+  ]
+}

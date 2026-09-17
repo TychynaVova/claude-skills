@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "provider-postman",
+  "version": "1.0.0",
+  "description": "Збирає методи платіжного провайдера з його документації (оплата, recurring, статус, capture/void/refund, Apple/Google Pay) і генерує версійну папку запитів та environment у Postman.",
+  "author": {
+    "name": "Volodymyr Tychyna",
+    "url": "https://github.com/TychynaVova"
+  },
+  "repository": "https://github.com/TychynaVova/claude-skills",
+  "license": "MIT",
+  "keywords": ["postman", "payments", "api", "psp"],
+  "skills": [
+    "./"
+  ]
+}
