@@ -796,7 +796,7 @@
       {
         "key": "secret_key",
         "value": "",
-        "type": "secret"
+        "type": "default"
       },
       {
         "key": "order_id"

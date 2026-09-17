@@ -81,7 +81,8 @@ claude plugin marketplace remove tychynavova-skills
 - для Apple Pay / Google Pay — окремо `Provider token` і `Decrypted data` (розшифровані мерчантом дані:
   DPAN / network token + cryptogram + ECI, Google Pay `CRYPTOGRAM_3DS` і `PAN_ONLY`); якщо така можливість
   є лише в закритій документації провайдера — запити позначаються `[Private]` із джерелом;
-- environment `<PROVIDER>_V<N>_SANDBOX` — лише base URL, ключі (порожні, заповнюєш сам)
+- environment `<PROVIDER>_V<N>_SANDBOX` — лише base URL, ключі (порожні звичайні змінні — впиши ключ у
+  **Current value**)
   і змінні, які запити зберігають з відповідей;
 - у звіті — статистика роботи Claude (час, модель, виклики, токени, інструменти) зі `session_stats.py`.
 
