@@ -26,7 +26,7 @@ Postman collection, DOCX, HTML, MD…). Якщо нічого не переда�
    (Postman → Settings → API Keys) і збережи в `.env` як `POSTMAN_API_KEY=…`. У ключа обмежений термін
    дії: 401 від Postman = ключ протух, попроси новий.
 2. Хелпер: `python3 <директорія цього skill-а>/postman_builder.py` (команди `workspaces`, `find`, `tree`,
-   `build`, `update`, `verify`; опис — у docstring). Статистика сесії — `session_stats.py` там само.
+   `build`, `sync`, `update`, `verify`; опис — у docstring). Статистика сесії — `session_stats.py` там само.
    Директорія skill-а — це «Base directory» з заголовка, з яким завантажився skill.
    Формат специфікації — `spec.example.json` там само.
 3. Робоча директорія для опису: `./provider-docs/<provider>/` (від поточної директорії сесії).
@@ -279,6 +279,17 @@ Stored-credential індикатори (first / subsequent, recurring / unschedu
 Склади spec (формат — `spec.example.json`) у scratchpad і запусти
 `postman_builder.py build <spec> --dry`, потім без `--dry`. Після створення впиши в spec
 `collection_uid` і `version` — далі правки тільки через `update <spec>` (оновлює на місці за назвами).
+
+**Доповнення наявної версії** (користувач просить «доопиши / додай відсутнє» у вже створеній `vN`):
+1. Візьми spec цієї версії (`./provider-docs/<provider>/*_spec.json`); якщо його немає — `tree` і
+   відтвори структуру в spec (назви папок і запитів — точно як у Postman).
+2. Звір вміст `vN` з поточними правилами skill-а (усі комбінації 3DS × SMS/DMS, `Scheme ID (MIT)`,
+   `Decrypted data`, `[Private]`-статуси, описи з джерелами) і допиши в spec відсутнє; зміни в описах
+   наявних запитів — окремим частковим spec (лише змінені запити).
+3. `sync <spec> --dry` → `sync <spec>` — створює відсутні папки/запити, оновлює описи папок, додає в
+   оточення нові змінні (значення наявних не чіпає); далі `update <частковий spec>` для змінених запитів.
+4. Онови `methods.md` (нові таблиці/статуси, кількість запитів) і `verify`.
+Наявні запити, які користувач міг правити вручну, не перезаписуй без потреби.
 
 Правила:
 - **Документація в кожному запиті:** поле `docs` (лінк на конкретний метод) — хелпер додає

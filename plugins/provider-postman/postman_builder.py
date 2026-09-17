@@ -8,6 +8,9 @@
   build <spec.json> [--dry]               створити колекцію (якщо треба), папку версії, підпапки (довільної
                                           вкладеності: "folders" всередині папки), запити, оточення
   update <spec.json>                      оновити на місці запити вже створеної папки версії (пошук за назвами)
+  sync <spec.json> [--dry]                доповнити вже створену папку версії: створити відсутні підпапки й запити,
+                                          оновити описи наявних папок, додати в оточення відсутні змінні
+                                          (значення наявних не змінюються); наявні запити не чіпає — для них update
   verify <spec.json>                      звірити змінні з запитів і змінні оточення
 
 Ключ: змінна середовища POSTMAN_API_KEY (або файл .env у поточній директорії).
@@ -252,6 +255,57 @@ def cmd_update(path):
         print('updated', label)
 
 
+def cmd_sync(path):
+    spec = json.load(open(path, encoding='utf-8'))
+    uid, docs = spec['collection_uid'], spec.get('docs_url', '')
+    owner = owner_of(uid)
+    vf = find_version_folder(uid, spec['version'])
+
+    def folder_desc(folder):
+        return folder.get('description', '') + (f"\n\n📖 Документація: {folder['docs']}" if folder.get('docs') else '')
+
+    def walk(spec_folders, pm_items, parent_id, inherited_docs, path):
+        existing = {i['name']: i for i in pm_items if 'item' in i}
+        for folder in spec_folders:
+            fdocs = folder.get('docs') or inherited_docs
+            label = ' / '.join(path + (folder['name'],))
+            pm = existing.get(folder['name'])
+            if pm is None:
+                fid = call('POST', f'/collections/{uid}/folders',
+                           {'name': folder['name'], 'description': folder_desc(folder), 'folder': parent_id})['model_id']
+                print('+ folder', label)
+                children = []
+            else:
+                fid, children = pm['id'], pm['item']
+                if (pm.get('description') or '') != folder_desc(folder):
+                    call('PUT', f'/collections/{uid}/folders/{owner}-{fid}', {'description': folder_desc(folder)})
+                    print('~ folder description', label)
+            have = {i['name'] for i in children if 'item' not in i}
+            for r in folder.get('requests', []):
+                if r['name'] not in have:
+                    call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, fdocs))
+                    print('+ request', label, '/', r['name'])
+            walk(folder.get('folders', []), children, fid, fdocs, path + (folder['name'],))
+
+    walk(spec['folders'], vf['item'], vf['id'], docs, (vf['name'],))
+
+    env = spec.get('environment')
+    if env:
+        found = [e for e in call('GET', '/environments')['environments'] if e['name'] == env['name']]
+        if not found:
+            print('environment', env['name'], 'не знайдено — створи через build або вручну')
+            return
+        euid = found[0]['uid']
+        current = call('GET', f'/environments/{euid}')['environment']['values']
+        keys = {v['key'] for v in current}
+        missing = [v for v in env['values'] if v['key'] not in keys]
+        if missing:
+            values = current + [{'key': v['key'], 'value': v.get('value', ''), 'type': v.get('type', 'default'),
+                                 'enabled': True} for v in missing]
+            call('PUT', f'/environments/{euid}', {'environment': {'name': env['name'], 'values': values}})
+            print('+ env vars', [v['key'] for v in missing])
+
+
 def cmd_verify(path):
     spec = json.load(open(path, encoding='utf-8'))
     vf = find_version_folder(spec['collection_uid'], spec['version'])
@@ -279,7 +333,7 @@ def main():
         sys.exit(__doc__)
     KEY = load_key()
     cmd, rest = args[0], args[1:]
-    {'workspaces': cmd_workspaces, 'find': cmd_find, 'tree': cmd_tree, 'build': cmd_build, 'update': cmd_update, 'verify': cmd_verify}[cmd](*rest)
+    {'workspaces': cmd_workspaces, 'find': cmd_find, 'tree': cmd_tree, 'build': cmd_build, 'update': cmd_update, 'sync': cmd_sync, 'verify': cmd_verify}[cmd](*rest)
 
 
 if __name__ == '__main__':
