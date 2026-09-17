@@ -20,7 +20,9 @@
   * PUT запиту — шлях колекції БЕЗ префікса власника, інакше changeParentError;
   * вкладена папка — поле "folder" (id без префікса) у тілі POST /folders;
   * запит у папку — POST /collections/<uid>/requests?folder=<owner>-<folderId>;
-  * відсутній auth у запиту = успадкування від папки.
+  * запит, створений через API без auth, Postman показує як «No Auth» (НЕ успадковує від папки),
+    тому auth зі spec (`auth` верхнього рівня) проставляється явно в кожен запит;
+    свій auth запиту — поле `auth` у запиті spec (напр. {"type": "noauth"}).
 """
 import json
 import os
@@ -84,7 +86,7 @@ def save_script(saves):
     return script('test', lines + ['}'])
 
 
-def to_request(spec_req, docs_default):
+def to_request(spec_req, docs_default, default_auth=None):
     docs = spec_req.get('docs') or docs_default
     desc = spec_req.get('description', '').rstrip()
     if docs:
@@ -98,8 +100,8 @@ def to_request(spec_req, docs_default):
                        for h in spec_req.get('headers', [])],
         'events': [],
     }
-    if spec_req.get('auth'):
-        body['auth'] = spec_req['auth']
+    if spec_req.get('auth') or default_auth:
+        body['auth'] = spec_req.get('auth') or default_auth
     b = spec_req.get('body') or {'mode': 'none'}
     if b['mode'] in ('urlencoded', 'formdata'):
         body['dataMode'] = 'params' if b['mode'] == 'formdata' else 'urlencoded'
@@ -201,7 +203,7 @@ def cmd_build(path):
         fid = fres['model_id']
         print('  ' * depth + '📁', folder['name'])
         for r in folder.get('requests', []):
-            call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, fdocs))
+            call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, fdocs, spec.get('auth')))
             print('  ' * depth + '   +', r['name'])
         for sub in folder.get('folders', []):
             create(sub, fid, fdocs, depth + 1)
@@ -251,7 +253,7 @@ def cmd_update(path):
         if not rid:
             print('SKIP (нема в Postman, створи через build або вручну):', label)
             continue
-        call('PUT', f'/collections/{bare(uid)}/requests/{owner_of(uid)}-{rid}', to_request(r, fdocs))
+        call('PUT', f'/collections/{bare(uid)}/requests/{owner_of(uid)}-{rid}', to_request(r, fdocs, spec.get('auth')))
         print('updated', label)
 
 
@@ -283,7 +285,7 @@ def cmd_sync(path):
             have = {i['name'] for i in children if 'item' not in i}
             for r in folder.get('requests', []):
                 if r['name'] not in have:
-                    call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, fdocs))
+                    call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, fdocs, spec.get('auth')))
                     print('+ request', label, '/', r['name'])
             walk(folder.get('folders', []), children, fid, fdocs, path + (folder['name'],))
 

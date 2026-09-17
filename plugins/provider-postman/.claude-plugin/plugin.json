@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "provider-postman",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Збирає методи платіжного провайдера з його документації (оплата SMS/DMS × 3DS / без 3DS / external MPI, recurring і MIT за scheme_id, статус, capture/void/refund, Apple/Google Pay) і генерує версійну папку запитів та environment у Postman.",
   "author": {
     "name": "Volodymyr Tychyna",
