@@ -86,6 +86,66 @@ def save_script(saves):
     return script('test', lines + ['}'])
 
 
+def js(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def js_path(path):
+    """'latest_charge.payment_method_details.card' → безпечний доступ до r."""
+    expr = 'r'
+    for part in path.split('.'):
+        expr = f'(({expr}) || {{}})[{js(part)}]' if not part.isdigit() else f'(({expr}) || [])[{part}]'
+    return expr
+
+
+def tests_script(t):
+    """Генерує Postman-тести з опису `tests` у spec.
+
+    Ключі (усі опційні):
+      status: 200 | [200, 201]            — очікуваний HTTP-код
+      max_time: 5000                      — час відповіді, мс
+      json: {"path": value}               — точна рівність поля (path через крапку)
+      one_of: {"path": [v1, v2]}          — значення з переліку
+      exists: ["path", ...]               — поле присутнє й не null
+      absent: ["path", ...]               — поле відсутнє або null
+      type: {"path": "string|number|boolean|object|array"}
+      match: {"path": "regex"}            — рядок відповідає шаблону
+      equals_var: {"path": "env_var"}     — поле дорівнює змінній оточення / локальній змінній
+      error: {"path": value, ...}         — для негативних: перевірки всередині тіла помилки (напр. {"error.code": "card_declined"})
+      header: {"Name": "regex"}           — заголовок відповіді
+      lines: ["pm.test(...)", ...]        — довільний JS, додається як є
+    """
+    if not t:
+        return []
+    lines = ['// --- tests (згенеровано з spec) ---', 'let r = {};',
+             'try { r = pm.response.json(); } catch (e) { r = {}; }']
+    status = t.get('status')
+    if status is not None:
+        codes = status if isinstance(status, list) else [status]
+        lines.append(f"pm.test('HTTP {'/'.join(map(str, codes))}', () => pm.expect(pm.response.code).to.be.oneOf({js(codes)}));")
+    if t.get('max_time'):
+        lines.append(f"pm.test('Час відповіді < {t['max_time']} мс', () => pm.expect(pm.response.responseTime).to.be.below({t['max_time']}));")
+    for p, v in {**t.get('json', {}), **t.get('error', {})}.items():
+        lines.append(f"pm.test({js(p + ' = ' + str(v))}, () => pm.expect({js_path(p)}).to.eql({js(v)}));")
+    for p, vs in t.get('one_of', {}).items():
+        lines.append(f"pm.test({js(p + ' ∈ ' + str(vs))}, () => pm.expect({js_path(p)}).to.be.oneOf({js(vs)}));")
+    for p in t.get('exists', []):
+        lines.append(f"pm.test({js(p + ' присутнє')}, () => pm.expect({js_path(p)}).to.not.be.oneOf([undefined, null, '']));")
+    for p in t.get('absent', []):
+        lines.append(f"pm.test({js(p + ' відсутнє')}, () => pm.expect({js_path(p)}).to.be.oneOf([undefined, null]));")
+    for p, ty in t.get('type', {}).items():
+        check = f'pm.expect(Array.isArray({js_path(p)})).to.be.true' if ty == 'array' else f'pm.expect({js_path(p)}).to.be.a({js(ty)})'
+        lines.append(f"pm.test({js(p + ' має тип ' + ty)}, () => {check});")
+    for p, rx in t.get('match', {}).items():
+        lines.append(f"pm.test({js(p + ' ~ /' + rx + '/')}, () => pm.expect(String({js_path(p)})).to.match(new RegExp({js(rx)})));")
+    for p, var in t.get('equals_var', {}).items():
+        lines.append(f"pm.test({js(p + ' = {{' + var + '}}')}, () => pm.expect(String({js_path(p)})).to.eql(String(pm.variables.get({js(var)}))));")
+    for h, rx in t.get('header', {}).items():
+        lines.append(f"pm.test({js('Заголовок ' + h)}, () => pm.expect(pm.response.headers.get({js(h)}) || '').to.match(new RegExp({js(rx)})));")
+    lines += t.get('lines', [])
+    return lines
+
+
 def to_request(spec_req, docs_default, default_auth=None):
     docs = spec_req.get('docs') or docs_default
     desc = spec_req.get('description', '').rstrip()
@@ -118,8 +178,12 @@ def to_request(spec_req, docs_default, default_auth=None):
         body['data'] = []
     if spec_req.get('prerequest'):
         body['events'].append(script('prerequest', spec_req['prerequest']))
+    test_lines = []
     if spec_req.get('saves'):
-        body['events'].append(save_script(spec_req['saves']))
+        test_lines += save_script(spec_req['saves'])['script']['exec']
+    test_lines += tests_script(spec_req.get('tests'))
+    if test_lines:
+        body['events'].append(script('test', test_lines))
     return body
 
 

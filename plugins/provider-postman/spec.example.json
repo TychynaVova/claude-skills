@@ -16,7 +16,9 @@
     ]
   },
   "folder_test": [
-    "pm.test('HTTP 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
+    "pm.test('Час відповіді < 10 с', () => pm.expect(pm.response.responseTime).to.be.below(10000));",
+    "pm.test('Відповідь — JSON', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('json'));",
+    "if (pm.response.code >= 400) { console.log('Provider error:', pm.response.text()); }"
   ],
   "folders": [
     {
@@ -83,6 +85,29 @@
               "saves": {
                 "payment_id": "r.id",
                 "threeds_session_id": "(r.three_ds || {}).session_id || ''"
+              },
+              "tests": {
+                "status": 200,
+                "one_of": {
+                  "status": [
+                    "captured",
+                    "pending_3ds"
+                  ]
+                },
+                "json": {
+                  "capture": true,
+                  "currency": "USD",
+                  "amount": 1000
+                },
+                "exists": [
+                  "id"
+                ],
+                "equals_var": {
+                  "order_id": "order_id"
+                },
+                "match": {
+                  "id": "^pay_"
+                }
               }
             },
             {
@@ -127,6 +152,21 @@
               "saves": {
                 "payment_id": "r.id",
                 "threeds_session_id": "(r.three_ds || {}).session_id || ''"
+              },
+              "tests": {
+                "status": 200,
+                "one_of": {
+                  "status": [
+                    "authorized",
+                    "pending_3ds"
+                  ]
+                },
+                "json": {
+                  "capture": false
+                },
+                "exists": [
+                  "id"
+                ]
               }
             },
             {
@@ -334,6 +374,82 @@
               ],
               "saves": {
                 "payment_id": "r.id"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Negative",
+          "description": "Негативні сценарії з документації провайдера; кожен запит очікує конкретну помилку.",
+          "requests": [
+            {
+              "name": "1. Declined card → card_declined",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/testing#declines",
+              "description": "Тестова картка 4000 0000 0000 0002 завжди відхиляється. Очікується HTTP 402 і `error.code = card_declined`.",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{$guid}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": true,
+                  "card": {
+                    "number": "4000000000000002",
+                    "exp_month": 12,
+                    "exp_year": 2030,
+                    "cvc": "123"
+                  },
+                  "three_ds": {
+                    "mode": "skip"
+                  }
+                }
+              },
+              "tests": {
+                "status": 402,
+                "error": {
+                  "error.code": "card_declined"
+                },
+                "exists": [
+                  "error.message"
+                ]
+              }
+            },
+            {
+              "name": "2. Missing API key → 401",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "auth": {
+                "type": "noauth"
+              },
+              "description": "Запит без авторизації. Очікується HTTP 401.",
+              "headers": [
+                [
+                  "Content-Type",
+                  "application/json"
+                ]
+              ],
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "amount": 1000,
+                  "currency": "USD"
+                }
+              },
+              "tests": {
+                "status": 401,
+                "exists": [
+                  "error.message"
+                ]
               }
             }
           ]

@@ -84,6 +84,10 @@ claude plugin marketplace remove tychynavova-skills
 - environment `<PROVIDER>_V<N>_SANDBOX` — лише base URL, ключі (порожні звичайні змінні — впиши ключ у
   **Current value**)
   і змінні, які запити зберігають з відповідей;
+- Postman-тести для кожного запиту: позитивні (HTTP-код, статус операції для SMS / DMS / 3DS, суми,
+  id, scheme id) і негативні окремими запитами в підпапках `Negative` (відмови тестових карток,
+  відсутній ключ, capture для SMS, void після capture…) — з кодами з документації провайдера; прогін
+  через Collection Runner або `newman` (лише з sandbox-ключами);
 - у звіті — статистика роботи Claude (час, модель, виклики, токени, інструменти) зі `session_stats.py`.
 
 Не комітьте `.env` та ключі.
