@@ -8,26 +8,55 @@
 
 ## Встановлення
 
+Два кроки, **обов'язково по черзі**: спершу підключити маркетплейс, потім встановити з нього плагін.
+
 У Claude Code:
 
 ```
 /plugin marketplace add TychynaVova/claude-skills
 /plugin install provider-postman@tychynavova-skills
+/reload-plugins
 ```
 
-або з терміналу:
+або з терміналу (потім перезапустити Claude Code):
 
 ```bash
 claude plugin marketplace add TychynaVova/claude-skills
 claude plugin install provider-postman@tychynavova-skills
 ```
 
-Оновлення: `claude plugin update provider-postman@tychynavova-skills`.
+Перевірка: `claude plugin list` — має бути `provider-postman@tychynavova-skills`, статус `enabled`.
+
+### Оновлення
+
+```bash
+claude plugin marketplace update tychynavova-skills
+claude plugin update provider-postman@tychynavova-skills
+```
+
+Після оновлення — `/reload-plugins` або нова сесія.
+
+### Видалення
+
+```bash
+claude plugin uninstall provider-postman@tychynavova-skills
+claude plugin marketplace remove tychynavova-skills
+```
+
+### Якщо не працює
+
+| Симптом | Причина / що робити |
+|---|---|
+| `Marketplace "tychynavova-skills" not found` | Не виконано перший крок — `/plugin marketplace add TychynaVova/claude-skills` |
+| `Unknown command: /provider-postman` | Сесію запущено до встановлення — `/reload-plugins` або нова сесія. Команду шукай у підказках після `/provider-postman` (може називатися `/provider-postman:provider-postman`) |
+| Skill спрацьовує двічі / конфлікт | Є ще ручна копія в `~/.claude/skills/provider-postman` — видали її, залиш плагін |
+| Не клонується репозиторій | Перевір доступ до github.com (`git ls-remote https://github.com/TychynaVova/claude-skills.git`) |
 
 ## provider-postman
 
 Запуск: `/provider-postman <лінк на документацію провайдера та/або шлях до файлу>`
-або просто попросити Claude «зроби Postman-запити для <провайдер> за цією документацією».
+(або вибрати skill у підказках після `/`), чи просто попросити Claude
+«зроби Postman-запити для <провайдер> за цією документацією: <лінк>».
 
 Що потрібно:
 
