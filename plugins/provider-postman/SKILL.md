@@ -3,7 +3,7 @@ name: provider-postman
 description: >-
   Розбір API платіжного провайдера за документацією (лінк та/або файл будь-якого формату) і генерація
   Postman-прикладів: локальний опис методів + нова версійна папка (v1/v2/v3…) у колекції провайдера +
-  environment. Покриває стандартну оплату в режимах SMS і DMS, рекурентні платежі, статус/деталі транзакції, capture, refund,
+  environment. Покриває стандартну оплату в усіх комбінаціях SMS/DMS × 3DS провайдера / без 3DS / власний MPI (external 3DS), рекурентні платежі, статус/деталі транзакції, capture, refund,
   void, Apple Pay / Google Pay (токен провайдера і розшифровані дані). Використовуй, коли користувач дає
   лінк на документацію провайдера і просить «зробити запити в Postman», «описати методи провайдера»,
   «оновити/створити v2 (v3…) у Postman», а також на /provider-postman <лінк або файл>.
@@ -44,6 +44,7 @@ Postman collection, DOCX, HTML, MD…). Якщо нічого не переда�
    |---|---|
    | Автентифікація | тип (Bearer, Basic, HMAC-підпис, OAuth token), заголовки, як отримати токен, sandbox vs prod base URL |
    | Режими SMS / DMS | див. «SMS / DMS» нижче — обов'язково для кожного методу оплати |
+   | 3DS / без 3DS / external MPI | див. «3DS» нижче — обов'язково для кожного методу оплати |
    | Стандартна оплата | create payment / authorize / sale / charge, 3DS (redirect, challenge, callback), confirm |
    | Рекурентні | збереження картки/токена (tokenize, customer, payment method, mandate), MIT / off-session, network transaction id (scheme id), stored credentials |
    | Статус / деталі | get payment / transaction / order, пошук за order id |
@@ -66,6 +67,29 @@ Postman collection, DOCX, HTML, MD…). Якщо нічого не переда�
    - які статуси повертаються в кожному режимі (напр. `requires_capture` / `authorized` vs `succeeded` / `captured`);
    - чи підтримується кожен режим для recurring, Apple Pay, Google Pay (буває, що гаманці — лише SMS).
    Якщо документація не згадує DMS — запиши «DMS у документації не знайдено», не вигадуй capture/void.
+
+   **3DS.** Три режими автентифікації власника картки — з'ясуй кожен:
+   - **3DS провайдера** (провайдер — 3DS Server): як увімкнути/примусити (`three_ds: required`,
+     `request_three_d_secure=any`…); обов'язкові дані для 3DS2 — browser info (accept header, user agent,
+     language, color depth, screen, time zone, java/js enabled, IP), `return_url`/`notification_url`,
+     дані власника (email, billing address, phone); чи є 3DS Method (device fingerprint, `methodURL`,
+     `threeDSMethodData`) і як повідомити його результат; як виглядає challenge (redirect URL,
+     `acsURL` + `creq`, для 3DS1 — `PaReq`/`MD`), яким запитом завершується (complete / confirm /
+     authorize after 3DS) або що фінальний статус приходить лише вебхуком; що повертається
+     (ECI, CAVV, `dsTransID`, `transStatus` Y/A/N/U/C/R, liability shift); frictionless vs challenge;
+     підтримка 3DS1 (якщо ще є) і 3DS2; тестові картки для frictionless, challenge, failed, attempted.
+   - **Без 3DS**: як вимкнути (`three_ds: skip`, налаштування MID…), чи дозволено провайдером;
+     винятки SCA (low value, TRA, MIT, whitelisting — поля `exemption`/`sca_exemption`), що буде при
+     soft decline (коди `1A` / `65`, «authentication required») і як повторити з 3DS.
+   - **External MPI** (3DS пройдено власним MPI мерчанта): чи підтримується; поля з результатами
+     автентифікації — `authentication_value`/CAVV/AAV (формат, кодування), `eci`, `ds_transaction_id`
+     (3DS2) / `xid` (3DS1), `version`, `trans_status`, `acs_transaction_id`, `exemption`, `challenge_indicator`;
+     які з них обов'язкові для кожної версії та платіжної системи.
+   Для гаманців: Apple Pay / Google Pay CRYPTOGRAM_3DS самі несуть cryptogram + ECI (3DS не потрібен);
+   Google Pay PAN_ONLY зазвичай вимагає 3DS — перевір.
+   Для recurring: MIT зазвичай без 3DS; перший CIT для збереження картки — з 3DS; перевір, чи провайдер
+   приймає 3DS / external MPI дані на рекурентних.
+   Не підтримується режим — запиши «не підтримується / не знайдено» із джерелом.
 
    Для кожного методу збери: HTTP-метод і шлях, лінк на сторінку методу, обов'язкові та опційні
    параметри (тип, формат, обмеження), заголовки (idempotency, версія API, підпис), формат суми
@@ -94,12 +118,22 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
 | Повернення | refund | void до capture, refund після |
 | Card / Recurring / Apple Pay / Google Pay | ✅/❌ | ✅/❌ |
 
+## 3DS
+| | 3DS провайдера | Без 3DS | External MPI |
+|---|---|---|---|
+| Як увімкнути | … | … | … |
+| Обов'язкові поля | browser info, return_url… | … | CAVV, ECI, dsTransID, version… |
+| Потік / завершення | frictionless / challenge → … | — | — |
+| Статуси | … | … | … |
+| Card / Recurring / Apple Pay / Google Pay | ✅/❌ | ✅/❌ | ✅/❌ |
+| Тестові картки | frictionless / challenge / fail | … | — |
+
 ## <Категорія>
 ### <Назва методу>
 - **Запит:** `POST /path`
 - **Документація:** <лінк на метод>
 - **Призначення:** 1–2 речення.
-- **Режим:** SMS / DMS / обидва (яким параметром).
+- **Режим:** SMS / DMS / обидва (яким параметром); 3DS провайдера / без 3DS / external MPI (якими полями).
 - **Параметри:** список `name` (тип, required/optional) — опис/допустимі значення.
 - **Приклад запиту / відповіді:** короткі блоки коду.
 - **Статуси / помилки:** ключові значення.
@@ -124,17 +158,32 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
    - є `vN` → `v(N+1)`.
    `build` рахує це сам (`"version": null`). Наявні папки не чіпай.
 4. Структура всередині `vN` (порожні категорії пропускай, нумерація підпапок наскрізна):
-   1. `Card — Initial` (з 3DS / без 3DS)
+   1. `Card — Initial`
    2. `Card — Recurring` (токен провайдера; network transaction id — якщо підтримується)
    3. `Status / Details`
    4. `Capture / Void / Refund`
    5. `Apple Pay` (`Provider token` та `Decrypted data` — окремими запитами/флоу)
    6. `Google Pay` (так само)
-   **SMS / DMS у запитах:** кожен запит оплати (initial, recurring, Apple Pay, Google Pay), що
-   підтримує обидва режими, створюй двома варіантами з суфіксом у назві — `… (SMS)` і `… (DMS)`;
-   в описі вкажи, чим вони відрізняються (параметр/ендпоінт) і яким буде статус. Якщо режим задається
-   тільки налаштуванням акаунта — один запит і примітка про це. У `Capture / Void / Refund`
-   capture і void познач `(DMS)` і в описі нагадай: void — лише до capture, після нього — refund.
+
+   **Всі варіанти — обов'язково.** Для кожного методу оплати (Card initial, recurring, Apple Pay,
+   Google Pay) створи **кожну комбінацію, яку підтримує провайдер**:
+   `{3DS провайдера | Non-3DS | External MPI} × {SMS | DMS}`, для гаманців ще
+   `× {Provider token | Decrypted data}`. Нічого не скорочуй і не замінюй приміткою «відрізняється
+   одним параметром» — кожен варіант має бути готовим до запуску запитом.
+   - Всередині методу — підпапка на режим 3DS (`3DS (provider)`, `Non-3DS`, `External MPI`;
+     для гаманців спершу `Provider token` / `Decrypted data`, далі режими 3DS, якщо вони там доречні).
+     У підпапці — запити флоу; запит оплати двома варіантами: `1. Create Payment (3DS, SMS)` і
+     `1. Create Payment (3DS, DMS)` (однаковий номер — це альтернативи одного кроку).
+   - `3DS (provider)`: після оплати — усі кроки, які є в провайдера: 3DS Method, Complete 3DS / Confirm,
+     отримання статусу. Browser info — у тілі запиту літералами (реалістичні значення).
+   - Опис кожного варіанта: чим відрізняється (параметр/ендпоінт), очікуваний статус, яку тестову
+     картку взято і який сценарій вона дає (frictionless / challenge / decline).
+   - Непідтримувані комбінації не створюй — перелічи їх в описі підпапки методу
+     («DMS для Google Pay не підтримується — <лінк>»).
+   - Режим задається тільки налаштуванням акаунта/MID → один запит і примітка про це.
+   - У `Capture / Void / Refund`: capture і void позначені `(DMS)`, в описі — void лише до capture,
+     після нього — refund; частковий capture / refund — окремими запитами, якщо підтримуються.
+   Скрипт підтримує вкладені папки довільної глибини (`folders` всередині папки в spec).
    Запити в підпапці нумеруй у порядку виконання флоу (`1. …`, `2. …`).
    Допоміжні запити, яких немає в реальній інтеграції (test helpers, емуляція фронту), познач
    `[Test helper]` / `[Frontend emulation]` у назві.
@@ -174,5 +223,6 @@ Base URL (sandbox / prod), auth, обов'язкові заголовки, idemp
 
 ## 6. Звіт користувачу
 
-Коротко: джерела, скільки методів знайдено по категоріях, які режими (SMS / DMS) підтримуються і як вмикаються, чого немає в документації, шлях до
+Коротко: джерела, скільки методів знайдено по категоріях, матриця підтримки (SMS/DMS × 3DS / без 3DS /
+external MPI по кожному методу оплати) і скільки варіантів запитів створено, чого немає в документації, шлях до
 `methods.md`, назва колекції/папки/оточення, що треба заповнити (ключі), що не перевірено запуском.

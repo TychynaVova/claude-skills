@@ -1,128 +1,173 @@
 {
-  "provider": "stripe",
-  "docs_url": "https://docs.stripe.com/api",
+  "provider": "exampleprovider",
+  "docs_url": "https://docs.example-provider.com/api",
   "workspace_id": "<workspace id з команди workspaces>",
   "collection_uid": null,
   "version": null,
-  "description": "Приклади запитів до Stripe API, складені за документацією провайдера (<YYYY-MM-DD>).",
-  "auth": {
-    "type": "bearer",
-    "bearer": [
-      {
-        "key": "token",
-        "value": "{{secret_key}}",
-        "type": "string"
-      }
-    ]
-  },
+  "description": "Приклади запитів до Example Provider API, складені за документацією провайдера (<YYYY-MM-DD>). Варіанти: 3DS провайдера / без 3DS / external MPI × SMS / DMS.",
+  "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{secret_key}}", "type": "string"}]},
   "folder_test": [
     "pm.test('HTTP 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
   ],
   "folders": [
     {
       "name": "1. Card — Initial",
-      "description": "Стандартна оплата карткою: створення платежу, 3DS, підтвердження.",
-      "docs": "https://docs.stripe.com/api/payment_intents",
-      "requests": [
+      "description": "Оплата карткою (CIT). Підпапки — режими 3DS, у кожній — SMS і DMS.",
+      "docs": "https://docs.example-provider.com/api/payments",
+      "folders": [
         {
-          "name": "1. Create Customer",
-          "method": "POST",
-          "url": "{{base_url}}/v1/customers",
-          "docs": "https://docs.stripe.com/api/customers/create",
-          "description": "Створює клієнта. Обов'язкових полів немає.",
-          "headers": [
-            [
-              "Content-Type",
-              "application/x-www-form-urlencoded"
-            ],
-            [
-              "Idempotency-Key",
-              "customer:{{charge_id}}",
-              "Унікальний ключ, повтор повертає той самий результат"
-            ]
-          ],
-          "body": {
-            "mode": "urlencoded",
-            "params": [
-              [
-                "email",
-                "test.customer@example.com",
-                "optional"
+          "name": "3DS (provider)",
+          "description": "3DS2 проводить провайдер. Frictionless → одразу фінальний статус; challenge → redirect на ACS, потім Complete 3DS.",
+          "requests": [
+            {
+              "name": "1. Create Payment (3DS, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/create",
+              "description": "SMS: авторизація + списання одним запитом (`capture: true`). 3DS обов'язковий (`three_ds.mode: required`), browser info — обов'язкова для 3DS2. Статус: `captured` (frictionless) або `pending_3ds` (challenge). Тестова картка challenge: 4000 0000 0000 3220.",
+              "headers": [
+                ["Content-Type", "application/json"],
+                ["Idempotency-Key", "{{order_id}}", "Унікальний на спробу оплати"]
               ],
-              [
-                "name",
-                "Test Customer",
-                "optional"
+              "body": {
+                "mode": "raw",
+                "language": "json",
+                "raw": {
+                  "order_id": "{{order_id}}",
+                  "amount": 1000,
+                  "currency": "USD",
+                  "capture": true,
+                  "card": {"number": "4000000000003220", "exp_month": 12, "exp_year": 2030, "cvc": "123"},
+                  "three_ds": {"mode": "required", "return_url": "https://example.com/3ds/return"},
+                  "browser_info": {
+                    "accept_header": "text/html", "user_agent": "Mozilla/5.0", "language": "en-US",
+                    "color_depth": 24, "screen_height": 1080, "screen_width": 1920,
+                    "time_zone": -120, "java_enabled": false, "javascript_enabled": true, "ip": "203.0.113.10"
+                  }
+                }
+              },
+              "prerequest": [
+                "pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"
               ],
-              [
-                "address[country]",
-                "US",
-                "optional, ISO 3166-1 alpha-2"
-              ],
-              [
-                "phone",
-                "+15555550100",
-                "optional",
-                false
-              ]
-            ]
-          },
-          "prerequest": [
-            "pm.environment.set('charge_id', pm.variables.replaceIn('{{$guid}}'));"
-          ],
-          "saves": {
-            "customer_id": "r.id"
-          }
+              "saves": {"payment_id": "r.id", "threeds_session_id": "(r.three_ds || {}).session_id || ''"}
+            },
+            {
+              "name": "1. Create Payment (3DS, DMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/create",
+              "description": "DMS: лише авторизація (`capture: false`), далі Capture або Void. Решта — як у SMS-варіанті. Статус: `authorized` або `pending_3ds`.",
+              "headers": [["Content-Type", "application/json"], ["Idempotency-Key", "{{order_id}}"]],
+              "body": {"mode": "raw", "language": "json", "raw": {"order_id": "{{order_id}}", "amount": 1000, "currency": "USD", "capture": false, "card": {"number": "4000000000003220", "exp_month": 12, "exp_year": 2030, "cvc": "123"}, "three_ds": {"mode": "required", "return_url": "https://example.com/3ds/return"}}},
+              "prerequest": ["pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"],
+              "saves": {"payment_id": "r.id", "threeds_session_id": "(r.three_ds || {}).session_id || ''"}
+            },
+            {
+              "name": "2. Complete 3DS (after challenge)",
+              "method": "POST",
+              "url": "{{base_url}}/payments/{{payment_id}}/3ds/complete",
+              "docs": "https://docs.example-provider.com/api/payments/complete-3ds",
+              "description": "Викликається після повернення клієнта з ACS (challenge). Для frictionless не потрібен.",
+              "headers": [["Content-Type", "application/json"]],
+              "body": {"mode": "raw", "language": "json", "raw": {"session_id": "{{threeds_session_id}}"}}
+            }
+          ]
         },
         {
-          "name": "2. Create Payment (DMS)",
-          "method": "POST",
-          "url": "{{base_url}}/payments",
-          "headers": [
-            [
-              "Content-Type",
-              "application/json"
-            ]
-          ],
-          "body": {
-            "mode": "raw",
-            "language": "json",
-            "raw": {
-              "amount": 1000,
-              "currency": "USD",
-              "customer": "{{customer_id}}",
-              "capture": false
+          "name": "Non-3DS",
+          "description": "Оплата без автентифікації: `three_ds.mode: skip`. Liability shift немає; у регіонах з SCA можливий soft decline (код 1A/65) → повтор з 3DS.",
+          "requests": [
+            {
+              "name": "1. Create Payment (non-3DS, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/create",
+              "headers": [["Content-Type", "application/json"], ["Idempotency-Key", "{{order_id}}"]],
+              "body": {"mode": "raw", "language": "json", "raw": {"order_id": "{{order_id}}", "amount": 1000, "currency": "USD", "capture": true, "card": {"number": "4242424242424242", "exp_month": 12, "exp_year": 2030, "cvc": "123"}, "three_ds": {"mode": "skip"}}},
+              "prerequest": ["pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"],
+              "saves": {"payment_id": "r.id"}
+            },
+            {
+              "name": "1. Create Payment (non-3DS, DMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/create",
+              "headers": [["Content-Type", "application/json"], ["Idempotency-Key", "{{order_id}}"]],
+              "body": {"mode": "raw", "language": "json", "raw": {"order_id": "{{order_id}}", "amount": 1000, "currency": "USD", "capture": false, "card": {"number": "4242424242424242", "exp_month": 12, "exp_year": 2030, "cvc": "123"}, "three_ds": {"mode": "skip"}}},
+              "prerequest": ["pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"],
+              "saves": {"payment_id": "r.id"}
             }
-          },
-          "saves": {
-            "payment_id": "r.id"
-          },
-          "description": "Авторизація без списання (DMS): кошти блокуються, далі Capture або Void. SMS-варіант — той самий запит з capture=true."
+          ]
+        },
+        {
+          "name": "External MPI",
+          "description": "3DS пройдено власним MPI мерчанта; провайдеру передаються результати автентифікації (ECI, CAVV, DS transaction id, версія, статус).",
+          "requests": [
+            {
+              "name": "1. Create Payment (external MPI, SMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/external-3ds",
+              "description": "`three_ds.mode: external`. `authentication_value` — CAVV/AAV (base64), `eci` — 2 символи, `ds_transaction_id` — з ARes/RRes (3DS2), `xid` — лише для 3DS1.",
+              "headers": [["Content-Type", "application/json"], ["Idempotency-Key", "{{order_id}}"]],
+              "body": {"mode": "raw", "language": "json", "raw": {"order_id": "{{order_id}}", "amount": 1000, "currency": "USD", "capture": true, "card": {"number": "4242424242424242", "exp_month": 12, "exp_year": 2030, "cvc": "123"}, "three_ds": {"mode": "external", "version": "2.2.0", "authentication_value": "AAABBBCCCDDDEEEFFF0000000000=", "eci": "05", "ds_transaction_id": "f25084f0-5b16-4c0a-ae5d-b24808a95e4b", "status": "Y"}}},
+              "prerequest": ["pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"],
+              "saves": {"payment_id": "r.id"}
+            },
+            {
+              "name": "1. Create Payment (external MPI, DMS)",
+              "method": "POST",
+              "url": "{{base_url}}/payments",
+              "docs": "https://docs.example-provider.com/api/payments/external-3ds",
+              "headers": [["Content-Type", "application/json"], ["Idempotency-Key", "{{order_id}}"]],
+              "body": {"mode": "raw", "language": "json", "raw": {"order_id": "{{order_id}}", "amount": 1000, "currency": "USD", "capture": false, "card": {"number": "4242424242424242", "exp_month": 12, "exp_year": 2030, "cvc": "123"}, "three_ds": {"mode": "external", "version": "2.2.0", "authentication_value": "AAABBBCCCDDDEEEFFF0000000000=", "eci": "05", "ds_transaction_id": "f25084f0-5b16-4c0a-ae5d-b24808a95e4b", "status": "Y"}}},
+              "prerequest": ["pm.environment.set('order_id', pm.variables.replaceIn('{{$guid}}'));"],
+              "saves": {"payment_id": "r.id"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Capture / Void / Refund",
+      "docs": "https://docs.example-provider.com/api/payments",
+      "requests": [
+        {
+          "name": "Capture (DMS)",
+          "method": "POST",
+          "url": "{{base_url}}/payments/{{payment_id}}/capture",
+          "description": "Лише для DMS-авторизації. Частковий capture — `amount` менше авторизованої суми.",
+          "headers": [["Content-Type", "application/json"]],
+          "body": {"mode": "raw", "language": "json", "raw": {"amount": 1000}}
+        },
+        {
+          "name": "Void (DMS)",
+          "method": "POST",
+          "url": "{{base_url}}/payments/{{payment_id}}/void",
+          "description": "Лише до capture. Після capture — Refund.",
+          "body": {"mode": "none"}
+        },
+        {
+          "name": "Refund",
+          "method": "POST",
+          "url": "{{base_url}}/payments/{{payment_id}}/refunds",
+          "headers": [["Content-Type", "application/json"], ["Idempotency-Key", "{{refund_key}}"]],
+          "body": {"mode": "raw", "language": "json", "raw": {"amount": 500, "reason": "requested_by_customer"}},
+          "prerequest": ["pm.variables.set('refund_key', pm.variables.replaceIn('{{$guid}}'));"],
+          "saves": {"refund_id": "r.id"}
         }
       ]
     }
   ],
   "environment": {
-    "name": "STRIPE_V1_SANDBOX",
+    "name": "EXAMPLEPROVIDER_V1_SANDBOX",
     "values": [
-      {
-        "key": "base_url",
-        "value": "https://api.stripe.com"
-      },
-      {
-        "key": "secret_key",
-        "value": "",
-        "type": "secret"
-      },
-      {
-        "key": "charge_id"
-      },
-      {
-        "key": "customer_id"
-      },
-      {
-        "key": "payment_id"
-      }
+      {"key": "base_url", "value": "https://sandbox.example-provider.com/v1"},
+      {"key": "secret_key", "value": "", "type": "secret"},
+      {"key": "order_id"},
+      {"key": "payment_id"},
+      {"key": "threeds_session_id"},
+      {"key": "refund_id"}
     ]
   }
 }

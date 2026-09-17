@@ -4,7 +4,7 @@
 
 | Плагін | Що робить |
 |---|---|
-| [provider-postman](plugins/provider-postman/SKILL.md) | За документацією платіжного провайдера (лінк або файл) збирає методи — оплата в режимах SMS/DMS, recurring, статус, capture/void/refund, Apple/Google Pay — пише їх опис і генерує версійну папку запитів (v1, v2, …) та environment у Postman |
+| [provider-postman](plugins/provider-postman/SKILL.md) | За документацією платіжного провайдера (лінк або файл) збирає методи — оплата в режимах SMS/DMS з 3DS, без 3DS і з власним MPI, recurring, статус, capture/void/refund, Apple/Google Pay — пише їх опис і генерує версійну папку запитів (v1, v2, …) та environment у Postman |
 
 ## Встановлення
 
@@ -40,7 +40,10 @@ claude plugin install provider-postman@tychynavova-skills
 
 - `./provider-docs/<provider>/methods.md` — опис знайдених методів з лінками на документацію, зокрема як провайдер
   вмикає SMS (авторизація + списання одним запитом) і DMS (авторизація → capture / void);
-- колекція `<provider>` у Postman (створюється, якщо немає) з новою папкою `vN`; запити оплати — у варіантах `(SMS)` і `(DMS)`, якщо провайдер підтримує обидва;
+- опис режимів 3DS: 3DS провайдера (browser info, 3DS Method, challenge, завершення), без 3DS (винятки SCA,
+  soft decline), external MPI (CAVV, ECI, DS transaction id…);
+- колекція `<provider>` у Postman (створюється, якщо немає) з новою папкою `vN`; для кожного методу оплати —
+  всі підтримувані комбінації `{3DS | non-3DS | external MPI} × {SMS | DMS}` окремими готовими запитами;
 - environment `<PROVIDER>_V<N>_SANDBOX` — лише base URL, ключі (порожні, заповнюєш сам)
   і змінні, які запити зберігають з відповідей.
 

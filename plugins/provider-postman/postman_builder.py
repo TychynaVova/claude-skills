@@ -5,7 +5,8 @@
   workspaces                              список робочих просторів (id, тип, назва)
   find <provider>                         колекції/папки/оточення з назвою провайдера
   tree <collection_uid>                   дерево колекції (папки, запити)
-  build <spec.json> [--dry]               створити колекцію (якщо треба), папку версії, підпапки, запити, оточення
+  build <spec.json> [--dry]               створити колекцію (якщо треба), папку версії, підпапки (довільної
+                                          вкладеності: "folders" всередині папки), запити, оточення
   update <spec.json>                      оновити на місці запити вже створеної папки версії (пошук за назвами)
   verify <spec.json>                      звірити змінні з запитів і змінні оточення
 
@@ -190,14 +191,20 @@ def cmd_build(path):
         if spec.get('folder_test'):
             upd['events'] = [script('test', spec['folder_test'])]
         call('PUT', f'/collections/{uid}/folders/{owner}-{vid}', upd)
-    for folder in spec['folders']:
+    def create(folder, parent_id, inherited_docs, depth):
+        fdocs = folder.get('docs') or inherited_docs
         fdesc = folder.get('description', '') + (f"\n\n📖 Документація: {folder['docs']}" if folder.get('docs') else '')
-        fres = call('POST', f'/collections/{uid}/folders', {'name': folder['name'], 'description': fdesc, 'folder': vid})
+        fres = call('POST', f'/collections/{uid}/folders', {'name': folder['name'], 'description': fdesc, 'folder': parent_id})
         fid = fres['model_id']
-        print(' folder', folder['name'])
-        for r in folder['requests']:
-            call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, folder.get('docs') or docs))
-            print('   +', r['name'])
+        print('  ' * depth + '📁', folder['name'])
+        for r in folder.get('requests', []):
+            call('POST', f'/collections/{uid}/requests?folder={owner}-{fid}', to_request(r, fdocs))
+            print('  ' * depth + '   +', r['name'])
+        for sub in folder.get('folders', []):
+            create(sub, fid, fdocs, depth + 1)
+
+    for folder in spec['folders']:
+        create(folder, vid, docs, 1)
     env = spec.get('environment')
     if env:
         values = [{'key': v['key'], 'value': v.get('value', ''), 'type': v.get('type', 'default'), 'enabled': True}
@@ -212,35 +219,55 @@ def find_version_folder(uid, version):
     return next(i for i in col['item'] if i['name'] == f'v{version}')
 
 
+def postman_requests(items, path=()):
+    """(шлях папок, запит) для всіх запитів у дереві Postman."""
+    for it in items:
+        if 'item' in it:
+            yield from postman_requests(it['item'], path + (it['name'],))
+        else:
+            yield path, it
+
+
+def spec_requests(folders, docs, path=()):
+    """(шлях папок, запит, docs за замовчуванням) для всіх запитів у spec."""
+    for f in folders:
+        fpath, fdocs = path + (f['name'],), f.get('docs') or docs
+        for r in f.get('requests', []):
+            yield fpath, r, fdocs
+        yield from spec_requests(f.get('folders', []), fdocs, fpath)
+
+
 def cmd_update(path):
     spec = json.load(open(path, encoding='utf-8'))
     uid, docs = spec['collection_uid'], spec.get('docs_url', '')
     vf = find_version_folder(uid, spec['version'])
-    existing = {(f['name'], r['name']): r['id'] for f in vf['item'] for r in f['item']}
-    for folder in spec['folders']:
-        for r in folder['requests']:
-            rid = existing.get((folder['name'], r['name']))
-            if not rid:
-                print('SKIP (нема в Postman, створи через build або вручну):', folder['name'], '/', r['name'])
-                continue
-            call('PUT', f'/collections/{bare(uid)}/requests/{owner_of(uid)}-{rid}', to_request(r, folder.get('docs') or docs))
-            print('updated', folder['name'], '/', r['name'])
+    existing = {(p, r['name']): r['id'] for p, r in postman_requests(vf['item'])}
+    for fpath, r, fdocs in spec_requests(spec['folders'], docs):
+        label = ' / '.join(fpath + (r['name'],))
+        rid = existing.get((fpath, r['name']))
+        if not rid:
+            print('SKIP (нема в Postman, створи через build або вручну):', label)
+            continue
+        call('PUT', f'/collections/{bare(uid)}/requests/{owner_of(uid)}-{rid}', to_request(r, fdocs))
+        print('updated', label)
 
 
 def cmd_verify(path):
     spec = json.load(open(path, encoding='utf-8'))
     vf = find_version_folder(spec['collection_uid'], spec['version'])
     used, local = set(), set()
-    for f in vf['item']:
-        for r in f['item']:
-            txt = json.dumps(r, ensure_ascii=False)
-            used |= set(re.findall(r'\{\{([\w.-]+)\}\}', json.dumps(r['request'], ensure_ascii=False)))
-            local |= set(re.findall(r"pm\.variables\.set\('([\w.-]+)'", txt))
+    for _, r in postman_requests(vf['item']):
+        txt = json.dumps(r, ensure_ascii=False)
+        used |= set(re.findall(r'\{\{([\w.-]+)\}\}', json.dumps(r['request'], ensure_ascii=False)))
+        local |= set(re.findall(r"pm\.variables\.set\('([\w.-]+)'", txt))
     used |= set(re.findall(r'\{\{([\w.-]+)\}\}', json.dumps(vf.get('auth') or {})))
     env_keys = {v['key'] for v in spec['environment']['values']}
     print('tree:')
-    for f in vf['item']:
-        print('  📁', f['name'], len(f['item']), 'requests')
+    counts = {}
+    for p, _ in postman_requests(vf['item']):
+        counts[p] = counts.get(p, 0) + 1
+    for p, n in counts.items():
+        print('  📁', ' / '.join(p), n, 'requests')
     print('used but not in env/local:', sorted(used - env_keys - local))
     print('in env but unused in requests:', sorted(env_keys - used))
 
