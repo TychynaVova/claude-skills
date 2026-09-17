@@ -11,6 +11,8 @@
   sync <spec.json> [--dry]                доповнити вже створену папку версії: створити відсутні підпапки й запити,
                                           оновити описи наявних папок, додати в оточення відсутні змінні
                                           (значення наявних не змінюються); наявні запити не чіпає — для них update
+  tests <spec.json> [--dry]               оновити лише тести (поле `tests`) у вже створених запитах: згенерований
+                                          блок замінюється, решта скриптів і сам запит не змінюються
   verify <spec.json>                      звірити змінні з запитів і змінні оточення
 
 Ключ: змінна середовища POSTMAN_API_KEY (або файл .env у поточній директорії).
@@ -98,6 +100,9 @@ def js_path(path):
     return expr
 
 
+TESTS_MARKER = '// --- tests (згенеровано з spec) ---'
+
+
 def tests_script(t):
     """Генерує Postman-тести з опису `tests` у spec.
 
@@ -117,7 +122,7 @@ def tests_script(t):
     """
     if not t:
         return []
-    lines = ['// --- tests (згенеровано з spec) ---', 'let r = {};',
+    lines = [TESTS_MARKER, '(() => {', 'let r = {};',
              'try { r = pm.response.json(); } catch (e) { r = {}; }']
     status = t.get('status')
     if status is not None:
@@ -143,6 +148,7 @@ def tests_script(t):
     for h, rx in t.get('header', {}).items():
         lines.append(f"pm.test({js('Заголовок ' + h)}, () => pm.expect(pm.response.headers.get({js(h)}) || '').to.match(new RegExp({js(rx)})));")
     lines += t.get('lines', [])
+    lines.append('})();')
     return lines
 
 
@@ -372,6 +378,36 @@ def cmd_sync(path):
             print('+ env vars', [v['key'] for v in missing])
 
 
+def cmd_tests(path):
+    spec = json.load(open(path, encoding='utf-8'))
+    uid = spec['collection_uid']
+    vf = find_version_folder(uid, spec['version'])
+    existing = {(p, r['name']): r for p, r in postman_requests(vf['item'])}
+    done = missing = 0
+    for fpath, r, _ in spec_requests(spec['folders'], spec.get('docs_url', '')):
+        if 'tests' not in r:
+            continue
+        item = existing.get((fpath, r['name']))
+        if item is None:
+            print('SKIP (нема в Postman):', ' / '.join(fpath + (r['name'],)))
+            missing += 1
+            continue
+        events, found = [], False
+        for e in item.get('event', []):
+            exec_lines = list(e.get('script', {}).get('exec', []))
+            if e['listen'] == 'test':
+                found = True
+                if TESTS_MARKER in exec_lines:
+                    exec_lines = exec_lines[:exec_lines.index(TESTS_MARKER)]
+                exec_lines += tests_script(r['tests'])
+            events.append(script(e['listen'], exec_lines))
+        if not found:
+            events.append(script('test', tests_script(r['tests'])))
+        call('PUT', f'/collections/{bare(uid)}/requests/{owner_of(uid)}-{item["id"]}', {'events': events})
+        done += 1
+    print(f'tests updated: {done}, skipped: {missing}')
+
+
 def cmd_verify(path):
     spec = json.load(open(path, encoding='utf-8'))
     vf = find_version_folder(spec['collection_uid'], spec['version'])
@@ -399,7 +435,7 @@ def main():
         sys.exit(__doc__)
     KEY = load_key()
     cmd, rest = args[0], args[1:]
-    {'workspaces': cmd_workspaces, 'find': cmd_find, 'tree': cmd_tree, 'build': cmd_build, 'update': cmd_update, 'sync': cmd_sync, 'verify': cmd_verify}[cmd](*rest)
+    {'workspaces': cmd_workspaces, 'find': cmd_find, 'tree': cmd_tree, 'build': cmd_build, 'update': cmd_update, 'sync': cmd_sync, 'tests': cmd_tests, 'verify': cmd_verify}[cmd](*rest)
 
 
 if __name__ == '__main__':
