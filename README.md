@@ -4,7 +4,7 @@
 
 | Плагін | Що робить |
 |---|---|
-| [provider-postman](plugins/provider-postman/SKILL.md) | За документацією платіжного провайдера (лінк або файл) збирає методи — оплата, recurring, статус, capture/void/refund, Apple/Google Pay — пише їх опис і генерує версійну папку запитів (v1, v2, …) та environment у Postman |
+| [provider-postman](plugins/provider-postman/SKILL.md) | За документацією платіжного провайдера (лінк або файл) збирає методи — оплата в режимах SMS/DMS, recurring, статус, capture/void/refund, Apple/Google Pay — пише їх опис і генерує версійну папку запитів (v1, v2, …) та environment у Postman |
 
 ## Встановлення
 
@@ -38,8 +38,9 @@ claude plugin install provider-postman@tychynavova-skills
 
 Результат:
 
-- `./provider-docs/<provider>/methods.md` — опис знайдених методів з лінками на документацію;
-- колекція `<provider>` у Postman (створюється, якщо немає) з новою папкою `vN`;
+- `./provider-docs/<provider>/methods.md` — опис знайдених методів з лінками на документацію, зокрема як провайдер
+  вмикає SMS (авторизація + списання одним запитом) і DMS (авторизація → capture / void);
+- колекція `<provider>` у Postman (створюється, якщо немає) з новою папкою `vN`; запити оплати — у варіантах `(SMS)` і `(DMS)`, якщо провайдер підтримує обидва;
 - environment `<PROVIDER>_V<N>_SANDBOX` — лише base URL, ключі (порожні, заповнюєш сам)
   і змінні, які запити зберігають з відповідей.
 

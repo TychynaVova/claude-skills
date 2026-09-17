@@ -5,7 +5,16 @@
   "collection_uid": null,
   "version": null,
   "description": "Приклади запитів до Stripe API, складені за документацією провайдера (<YYYY-MM-DD>).",
-  "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{secret_key}}", "type": "string"}]},
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{secret_key}}",
+        "type": "string"
+      }
+    ]
+  },
   "folder_test": [
     "pm.test('HTTP 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
   ],
@@ -22,30 +31,73 @@
           "docs": "https://docs.stripe.com/api/customers/create",
           "description": "Створює клієнта. Обов'язкових полів немає.",
           "headers": [
-            ["Content-Type", "application/x-www-form-urlencoded"],
-            ["Idempotency-Key", "customer:{{charge_id}}", "Унікальний ключ, повтор повертає той самий результат"]
+            [
+              "Content-Type",
+              "application/x-www-form-urlencoded"
+            ],
+            [
+              "Idempotency-Key",
+              "customer:{{charge_id}}",
+              "Унікальний ключ, повтор повертає той самий результат"
+            ]
           ],
           "body": {
             "mode": "urlencoded",
             "params": [
-              ["email", "test.customer@example.com", "optional"],
-              ["name", "Test Customer", "optional"],
-              ["address[country]", "US", "optional, ISO 3166-1 alpha-2"],
-              ["phone", "+15555550100", "optional", false]
+              [
+                "email",
+                "test.customer@example.com",
+                "optional"
+              ],
+              [
+                "name",
+                "Test Customer",
+                "optional"
+              ],
+              [
+                "address[country]",
+                "US",
+                "optional, ISO 3166-1 alpha-2"
+              ],
+              [
+                "phone",
+                "+15555550100",
+                "optional",
+                false
+              ]
             ]
           },
           "prerequest": [
             "pm.environment.set('charge_id', pm.variables.replaceIn('{{$guid}}'));"
           ],
-          "saves": {"customer_id": "r.id"}
+          "saves": {
+            "customer_id": "r.id"
+          }
         },
         {
-          "name": "2. Create Payment (JSON example)",
+          "name": "2. Create Payment (DMS)",
           "method": "POST",
           "url": "{{base_url}}/payments",
-          "headers": [["Content-Type", "application/json"]],
-          "body": {"mode": "raw", "language": "json", "raw": {"amount": 1000, "currency": "USD", "customer": "{{customer_id}}"}},
-          "saves": {"payment_id": "r.id"}
+          "headers": [
+            [
+              "Content-Type",
+              "application/json"
+            ]
+          ],
+          "body": {
+            "mode": "raw",
+            "language": "json",
+            "raw": {
+              "amount": 1000,
+              "currency": "USD",
+              "customer": "{{customer_id}}",
+              "capture": false
+            }
+          },
+          "saves": {
+            "payment_id": "r.id"
+          },
+          "description": "Авторизація без списання (DMS): кошти блокуються, далі Capture або Void. SMS-варіант — той самий запит з capture=true."
         }
       ]
     }
@@ -53,11 +105,24 @@
   "environment": {
     "name": "STRIPE_V1_SANDBOX",
     "values": [
-      {"key": "base_url", "value": "https://api.stripe.com"},
-      {"key": "secret_key", "value": "", "type": "secret"},
-      {"key": "charge_id"},
-      {"key": "customer_id"},
-      {"key": "payment_id"}
+      {
+        "key": "base_url",
+        "value": "https://api.stripe.com"
+      },
+      {
+        "key": "secret_key",
+        "value": "",
+        "type": "secret"
+      },
+      {
+        "key": "charge_id"
+      },
+      {
+        "key": "customer_id"
+      },
+      {
+        "key": "payment_id"
+      }
     ]
   }
 }
