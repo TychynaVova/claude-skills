@@ -10,6 +10,19 @@
 
 ## Встановлення
 
+### claude.ai у браузері (архівом)
+
+1. Завантажити [`dist/provider-postman-skill.zip`](https://github.com/TychynaVova/claude-skills/raw/main/dist/provider-postman-skill.zip).
+2. Settings → Skills → **Upload skill** → вибрати архів → **Upload**.
+
+Архів зібраний під вимоги завантажувача: `SKILL.md` у корені, без маніфеста плагіна.
+Перезібрати після правок скіла: `./scripts/build-skill-zip.sh`.
+
+Репозиторій цілком (`claude-skills-main.zip` з GitHub) завантажувати не можна — він містить
+маніфест плагіна і вкладений `SKILL.md`, завантажувач таке відхиляє.
+
+### Claude Code (плагіном)
+
 ```bash
 claude plugin marketplace add TychynaVova/claude-skills
 claude plugin install provider-postman@tychynavova-skills
